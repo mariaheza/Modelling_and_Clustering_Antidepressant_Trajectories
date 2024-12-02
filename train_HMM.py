@@ -191,7 +191,7 @@ representation = str(sys.argv[2])
 idx = str(sys.argv[3])
 dataset = 'N06A_selected'
 # Create the results dir:
-results_dir = '/nfs/research/birney/users/heza/ukbb/results/hmm_results/' + dataset + '/month_ts_rep/' + representation + '/poisson_distribution/final_model/'
+results_dir = 'results_dir'
 isExist = os.path.exists(results_dir)
 if not isExist:
   # Create a new directory because it does not exist 
@@ -204,7 +204,7 @@ df = apply_additional_exclusion_criteria(data)
 
 
 # Read the training samples:
-training_ind_path = '/nfs/research/birney/users/heza/ukbb/results/hmm_results/' + dataset + '/month_ts_rep/' + representation + '/poisson_distribution/hold_out_test_validation/'+'sample_indiv_used_for_hmm_training.txt'
+training_ind_path = 'sample_indiv_used_for_hmm_training.txt'
 training_ind = pd.read_table(training_ind_path)
 # And prepare the data:
 training_df = df[df['eid'].isin(np.unique(training_ind['eid']))]
