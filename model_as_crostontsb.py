@@ -1,115 +1,105 @@
 # MODEL TIME SERIES WITH CROSTONTSB MODELLING
-# This script can be used with multivariate or univariate input data:
-
-# bsub -M25000 "python model_as_crostontsb.py 55"
 
 import os
 import numpy as np
 import pandas as pd
-import sys, getopt
+import sys
 
-# Croston function:
-def Croston_TSB(ts,extra_periods=1,alpha=0.4,beta=0.4):
-    d = np.array(ts) # Transform the input into a numpy array
-    cols = len(d) # Historical period length
-    d = np.append(d,[np.nan]*extra_periods) # Append np.nan into the demand array to cover future periods
-    #level (a), periodicity(p) and forecast (f)
-    a,p,f = np.full((3,cols+extra_periods),np.nan)
-    # Initialization
-    first_occurence = np.argmax(d[:cols]>0)
-    a[0] = d[first_occurence]
-    p[0] = 1/ (1 + first_occurence)
-    f[0] = p[0]*a[0]
-	# Create all the t+1 forecasts
-    for t in range(0,cols):        
-        if d[t] > 0:
-            a[t+1] = alpha*d[t] + (1-alpha)*a[t] 
-            p[t+1] = beta*(1) + (1-beta)*p[t]         
+def Croston_TSB(ts, extra_periods=1, alpha=0.4, beta=0.4):
+    """
+    Apply the Croston-Tesla-Slack-Billing (CrostonTSB) model to forecast intermittent demand.
+
+    Parameters:
+    ts (array-like): Time series data.
+    extra_periods (int): Number of periods to forecast beyond the input data.
+    alpha (float): Smoothing parameter for the demand level.
+    beta (float): Smoothing parameter for the demand interval.
+
+    Returns:
+    DataFrame: Forecast and other model parameters for each period.
+    """
+    ts = np.array(ts)
+    n = len(ts)
+    ts = np.append(ts, [np.nan] * extra_periods)
+    a, p, f = np.full((3, n + extra_periods), np.nan)
+
+    first_occurrence = np.argmax(ts[:n] > 0)
+    a[0] = ts[first_occurrence]
+    p[0] = 1 / (1 + first_occurrence)
+    f[0] = p[0] * a[0]
+
+    for t in range(0, n):
+        if ts[t] > 0:
+            a[t + 1] = alpha * ts[t] + (1 - alpha) * a[t]
+            p[t + 1] = beta * 1 + (1 - beta) * p[t]
         else:
-            a[t+1] = a[t]
-            p[t+1] = (1-beta)*p[t]
-        f[t+1] = p[t+1]*a[t+1]
-    # Future Forecast 
-    a[cols+1:cols+extra_periods] = a[cols]
-    p[cols+1:cols+extra_periods] = p[cols]
-    f[cols+1:cols+extra_periods] = f[cols]            
-    df = pd.DataFrame.from_dict({"Demand":d,"Forecast":f,"Period":p,"Level":a,"Error":d-f})
-    return df
+            a[t + 1] = a[t]
+            p[t + 1] = (1 - beta) * p[t]
+        f[t + 1] = p[t + 1] * a[t + 1]
+
+    a[n + 1:] = a[n]
+    p[n + 1:] = p[n]
+    f[n + 1:] = f[n]
+
+    return pd.DataFrame({"Demand": ts, "Forecast": f, "Period": p, "Level": a, "Error": ts - f})
+
 
 def model_as_crostontsb_multivariate(data):
-	ind_list = data.eid.unique().tolist() # each row in the dataframe as element in a list
-	drug_list = data.atc_code.unique().tolist()
-	#
-	LD = []
-	for d in drug_list:
-		subd = data[data['atc_code'] == d]
-		L = []
-		for i in ind_list:  # iterate though the elements in the list to process them individually
-			print(i)
-			subs = subd[subd['eid'] == i]  
-			subdf = subs[['eid','t', 'atc_code']]
-			subdf = subdf.reset_index(drop=True)
-			subs = subs.set_index('t')['orig_value']
-			croston_rep = Croston_TSB(subs)['Forecast']
-			mov_avg = croston_rep.rolling(7).sum()
-			# Note that I am not using the mov average!
-			test = pd.DataFrame([croston_rep]).T.rename(columns={"Forecast": "crostontsb"})
-			subdf = subdf.join(test)
-			L.append(subdf)
-		results1 = pd.concat(L)
-		#
-		LD.append(results1)
-	#
-	results2 = pd.concat(LD)  # to transform it in a datframe
-	return(results2)
+    """
+    Apply CrostonTSB model to multivariate data grouped by unique identifiers.
+
+    Parameters:
+    data (DataFrame): DataFrame with columns 'eid', 't', 'atc_code', and 'orig_value'.
+
+    Returns:
+    DataFrame: Results with CrostonTSB forecasts added for each group.
+    """
+    ind_list = data['eid'].unique().tolist()
+    drug_list = data['atc_code'].unique().tolist()
+
+    results = []
+    for drug in drug_list:
+        sub_data = data[data['atc_code'] == drug]
+        temp_results = []
+
+        for eid in ind_list:
+            sub_ind_data = sub_data[sub_data['eid'] == eid]
+            if sub_ind_data.empty:
+                continue
+            subdf = sub_ind_data[['eid', 't', 'atc_code']].reset_index(drop=True)
+            ts = sub_ind_data.set_index('t')['orig_value']
+            croston_rep = Croston_TSB(ts)['Forecast']
+            test = pd.DataFrame(croston_rep, columns=["crostontsb"])
+            subdf = subdf.join(test)
+            temp_results.append(subdf)
+
+        if temp_results:
+            results.append(pd.concat(temp_results))
+
+    return pd.concat(results) if results else pd.DataFrame()
 
 
-######################################
-################ MAIN ################
-######################################
+# MAIN
 
+def main():
+    data_path = '/data_path/'
+    file = 'month_N06A_time_series.txt'
 
-subset_n = str(sys.argv[1])
-time_stamp = 'month'
-representation = 'crostontsb'
-variables = 'multivariate'
-subdir = 'month_ts_rep/'
-data_path = '/data_path/'+subdir
-file = 'month_N06A_time_series_16052022_subset_'+subset_n+'.txt'
+    try:
+        data = pd.read_table(os.path.join(data_path, file))
+    except FileNotFoundError:
+        sys.exit("Error: Data file not found. Please check the file path.")
 
-data = pd.read_table(data_path+file)
-# PROCESS THE DATA:
-# To read as pandas dataframe and convert it to numpy array
-data.shape
-list(data.columns)
-# To drop the columns that we don't need:
-if representation=='crostontsb': 
-	if variables=='univariate':
-		df = data[['eid','t','orig_value']]
-	else:
-		df = data[['eid','t','atc_code','orig_value']]
-else:
-	df = data[['eid','t',representation]]
+    required_columns = {'eid', 't', 'atc_code', 'orig_value'}
+    if not required_columns.issubset(data.columns):
+        sys.exit("Error: Missing required columns in the input data.")
 
+    data = data[['eid', 't', 'atc_code', 'orig_value']]
+    results = model_as_crostontsb_multivariate(data)
 
+    final_data = pd.merge(data, results, on=['eid', 't', 'atc_code'], how='left')
+    output_file = os.path.join(data_path, 'month_N06A_time_series_with_crostonTSB.txt')
+    final_data.to_csv(output_file, header=True, index=False, sep='\t')
 
-
-if representation == 'crostontsb':
-	if variables == 'univariate':
-		df2 = model_as_crostontsb(df)
-	else:
-		df2 = model_as_crostontsb_multivariate(df)
-else:
-	df2 = df
-
-
-
-# Append to the original dataset and save:
-final = pd.merge(data,df2, on=['eid','t','atc_code'])
-final.to_csv(data_path+'month_N06A_time_series_16052022_with_crostonTSB_subsets/month_N06A_time_series_with_crostonTSB_16052022_subset_'+subset_n+'.txt', header=True, index=False, sep='\t', mode='a')
-
-print('all done for subset '+subset_n)
-
-
-
-
+if __name__ == "__main__":
+    main()
