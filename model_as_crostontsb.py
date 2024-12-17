@@ -8,15 +8,6 @@ import sys
 def Croston_TSB(ts, extra_periods=1, alpha=0.4, beta=0.4):
     """
     Apply the Croston-Tesla-Slack-Billing (CrostonTSB) model to forecast intermittent demand.
-
-    Parameters:
-    ts (array-like): Time series data.
-    extra_periods (int): Number of periods to forecast beyond the input data.
-    alpha (float): Smoothing parameter for the demand level.
-    beta (float): Smoothing parameter for the demand interval.
-
-    Returns:
-    DataFrame: Forecast and other model parameters for each period.
     """
     ts = np.array(ts)
     n = len(ts)
@@ -47,12 +38,7 @@ def Croston_TSB(ts, extra_periods=1, alpha=0.4, beta=0.4):
 def model_as_crostontsb_multivariate(data):
     """
     Apply CrostonTSB model to multivariate data grouped by unique identifiers.
-
-    Parameters:
-    data (DataFrame): DataFrame with columns 'eid', 't', 'atc_code', and 'orig_value'.
-
-    Returns:
-    DataFrame: Results with CrostonTSB forecasts added for each group.
+    data = DataFrame with columns 'eid', 't', 'atc_code', and 'orig_value'.
     """
     ind_list = data['eid'].unique().tolist()
     drug_list = data['atc_code'].unique().tolist()
